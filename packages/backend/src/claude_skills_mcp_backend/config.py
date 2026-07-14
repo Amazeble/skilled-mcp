@@ -21,8 +21,13 @@ DEFAULT_CONFIG = {
             "type": "local",
             "path": "~/.claude/skills",
         },
+        {
+            "type": "local",
+            "path": "D:/llama-proxy/claude-skills-mcp/plugins",
+        },
     ],
     "embedding_model": "all-MiniLM-L6-v2",
+    "turbovec_bit_width": 4,
     "default_top_k": 3,
     "max_skill_content_chars": None,  # None for unlimited, or an integer to limit
     "load_skill_documents": True,  # Load additional files from skill directories

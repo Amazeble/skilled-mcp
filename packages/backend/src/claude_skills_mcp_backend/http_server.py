@@ -208,7 +208,10 @@ async def initialize_backend(config_path: str | None = None, verbose: bool = Fal
 
     # Initialize search engine
     logger.info("Initializing search engine...")
-    search_engine = SkillSearchEngine(config["embedding_model"])
+    search_engine = SkillSearchEngine(
+        config["embedding_model"],
+        bit_width=config.get("turbovec_bit_width", 4)
+    )
 
     # Initialize loading state
     loading_state_global = LoadingState()

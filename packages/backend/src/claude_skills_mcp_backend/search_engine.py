@@ -1,4 +1,4 @@
-"""Vector search engine for finding relevant skills."""
+"""Vector search engine for finding relevant skills using turbovec."""
 
 import logging
 import threading
@@ -6,6 +6,7 @@ from typing import Any
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
+from turbovec import TurboQuantIndex
 
 from .skill_loader import Skill
 
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class SkillSearchEngine:
-    """Search engine for finding relevant skills using vector similarity.
+    """Search engine for finding relevant skills using turbovec.
 
     Attributes
     ----------
@@ -23,27 +24,32 @@ class SkillSearchEngine:
         Name of the sentence-transformers model to use.
     skills : list[Skill]
         List of indexed skills.
-    embeddings : np.ndarray | None
-        Embeddings matrix for all skill descriptions.
+    index : TurboQuantIndex | None
+        Turbovec index for vector search.
+    bit_width : int
+        Bit width for quantization (2, 3, or 4).
     _lock : threading.Lock
-        Lock for thread-safe access to skills and embeddings.
+        Lock for thread-safe access to skills and index.
     """
 
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, bit_width: int = 4):
         """Initialize the search engine.
 
         Parameters
         ----------
         model_name : str
             Name of the sentence-transformers model to use.
+        bit_width : int, optional
+            Bit width for quantization, by default 4.
         """
         logger.info(
-            f"Search engine initialized (model: {model_name}, lazy-loading enabled)"
+            f"Search engine initialized (model: {model_name}, bit_width: {bit_width}, lazy-loading enabled)"
         )
         self.model: SentenceTransformer | None = None
         self.model_name = model_name
         self.skills: list[Skill] = []
-        self.embeddings: np.ndarray | None = None
+        self.bit_width = bit_width
+        self.index: TurboQuantIndex | None = None
         self._lock = threading.Lock()
 
     def _ensure_model_loaded(self) -> SentenceTransformer:
@@ -72,21 +78,26 @@ class SkillSearchEngine:
             if not skills:
                 logger.warning("No skills to index")
                 self.skills = []
-                self.embeddings = None
+                self.index = None
                 return
 
-            logger.info(f"Indexing {len(skills)} skills...")
+            logger.info(f"Indexing {len(skills)} skills using turbovec...")
             self.skills = skills
 
             # Generate embeddings from skill descriptions
             descriptions = [skill.description for skill in skills]
             model = self._ensure_model_loaded()
-            self.embeddings = model.encode(descriptions, convert_to_numpy=True)
+            embeddings = model.encode(descriptions, convert_to_numpy=True)
 
-            logger.info(f"Successfully indexed {len(skills)} skills")
+            # Initialize turbovec index with detected dimension
+            dim = embeddings.shape[1]
+            self.index = TurboQuantIndex(dim=dim, bit_width=self.bit_width)
+            self.index.add(embeddings)
+
+            logger.info(f"Successfully indexed {len(skills)} skills with turbovec")
 
     def add_skills(self, skills: list[Skill]) -> None:
-        """Add skills incrementally and update embeddings.
+        """Add skills incrementally and update index.
 
         Parameters
         ----------
@@ -104,15 +115,17 @@ class SkillSearchEngine:
             model = self._ensure_model_loaded()
             new_embeddings = model.encode(descriptions, convert_to_numpy=True)
 
-            # Append to existing skills and embeddings
+            # Append to existing skills
             self.skills.extend(skills)
 
-            if self.embeddings is None:
+            if self.index is None:
                 # First batch of skills
-                self.embeddings = new_embeddings
+                dim = new_embeddings.shape[1]
+                self.index = TurboQuantIndex(dim=dim, bit_width=self.bit_width)
+                self.index.add(new_embeddings)
             else:
-                # Append to existing embeddings
-                self.embeddings = np.vstack([self.embeddings, new_embeddings])
+                # Add to existing index
+                self.index.add(new_embeddings)
 
             logger.info(
                 f"Successfully added {len(skills)} skills. Total: {len(self.skills)} skills"
@@ -134,30 +147,34 @@ class SkillSearchEngine:
             List of skill dictionaries with relevance scores, sorted by relevance.
         """
         with self._lock:
-            if not self.skills or self.embeddings is None:
+            if not self.skills or self.index is None:
                 logger.warning("No skills indexed, returning empty results")
                 return []
 
             # Ensure top_k doesn't exceed available skills
             top_k = min(top_k, len(self.skills))
 
-            logger.info(f"Searching for: '{query}' (top_k={top_k})")
+            logger.info(f"Searching for: '{query}' (top_k={top_k}) using turbovec")
 
             # Generate embedding for the query
             model = self._ensure_model_loaded()
-            query_embedding = model.encode([query], convert_to_numpy=True)[0]
+            query_embedding = model.encode([query], convert_to_numpy=True)
 
-            # Compute cosine similarity
-            similarities = self._cosine_similarity(query_embedding, self.embeddings)
+            # Perform search using turbovec
+            scores, indices = self.index.search(query_embedding, k=top_k)
 
-            # Get top-k indices
-            top_indices = np.argsort(similarities)[::-1][:top_k]
+            # Build results (turbovec search returns 2D arrays (nq, k))
+            # We only have one query, so we take the first row
+            scores = scores[0]
+            indices = indices[0]
 
-            # Build results
             results = []
-            for idx in top_indices:
+            for i in range(len(indices)):
+                idx = indices[i]
+                score = float(scores[i])
+                
+                # turbovec returns indices as int64
                 skill = self.skills[idx]
-                score = float(similarities[idx])
 
                 result = skill.to_dict()
                 result["relevance_score"] = score
@@ -167,28 +184,3 @@ class SkillSearchEngine:
 
             logger.info(f"Returning {len(results)} results")
             return results
-
-    @staticmethod
-    def _cosine_similarity(vec: np.ndarray, matrix: np.ndarray) -> np.ndarray:
-        """Compute cosine similarity between a vector and a matrix of vectors.
-
-        Parameters
-        ----------
-        vec : np.ndarray
-            Query vector.
-        matrix : np.ndarray
-            Matrix of vectors to compare against.
-
-        Returns
-        -------
-        np.ndarray
-            Similarity scores.
-        """
-        # Normalize vectors
-        vec_norm = vec / np.linalg.norm(vec)
-        matrix_norm = matrix / np.linalg.norm(matrix, axis=1, keepdims=True)
-
-        # Compute dot product (cosine similarity for normalized vectors)
-        similarities = np.dot(matrix_norm, vec_norm)
-
-        return similarities

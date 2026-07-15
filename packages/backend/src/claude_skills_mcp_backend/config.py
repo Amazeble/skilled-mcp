@@ -10,20 +10,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_CONFIG = {
     "skill_sources": [
         {
-            "type": "github",
-            "url": "https://github.com/anthropics/skills",
-        },
-        {
-            "type": "github",
-            "url": "https://github.com/K-Dense-AI/claude-scientific-skills",
-        },
-        {
-            "type": "local",
-            "path": "~/.claude/skills",
-        },
-        {
-            "type": "local",
-            "path": "D:/llama-proxy/claude-skills-mcp/plugins",
+            "type": "local_db",
+            "path": "storage.db",
         },
     ],
     "embedding_model": "all-MiniLM-L6-v2",

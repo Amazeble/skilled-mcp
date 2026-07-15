@@ -90,19 +90,9 @@ def get_example_config() -> str:
     config_with_comments = {
         "skill_sources": [
             {
-                "type": "github",
-                "url": "https://github.com/anthropics/skills",
-                "comment": "Official Anthropic skills - diverse examples with Python scripts, images, documents",
-            },
-            {
-                "type": "github",
-                "url": "https://github.com/K-Dense-AI/claude-scientific-skills",
-                "comment": "70+ scientific skills for bioinformatics, cheminformatics, and analysis",
-            },
-            {
-                "type": "local",
-                "path": "~/.claude/skills",
-                "comment": "Your custom local skills (optional - directory doesn't need to exist)",
+                "type": "local_db",
+                "path": "storage.db",
+                "comment": "Single local SQLite database file for skills storage",
             },
         ],
         "embedding_model": "all-MiniLM-L6-v2",

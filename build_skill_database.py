@@ -28,6 +28,74 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def view_database(database_path: Path) -> None:
+    """View the contents of a skill database file.
+    
+    Parameters
+    ----------
+    database_path : Path
+        Path to the .tq database file.
+    """
+    if not database_path.exists():
+        print(f"Error: Database file not found: {database_path}")
+        return
+    
+    logger.info(f"Reading database from: {database_path}")
+    
+    skills = []
+    with open(database_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+    
+    if not lines:
+        print("Database is empty.")
+        return
+    
+    # Skip header line if present
+    start_idx = 0
+    if lines[0].strip().startswith("name\t"):
+        start_idx = 1
+        logger.info("Header found, skipping...")
+    
+    for i, line in enumerate(lines[start_idx:], start=start_idx):
+        line = line.strip()
+        if not line:
+            continue
+        
+        parts = line.split("\t")
+        if len(parts) >= 3:
+            name = parts[0]
+            metadata_json = parts[1]
+            file_dir = parts[2]
+            
+            try:
+                metadata = json.loads(metadata_json)
+            except json.JSONDecodeError:
+                metadata = {"raw": metadata_json}
+            
+            skills.append({
+                "name": name,
+                "metadata": metadata,
+                "file_dir": file_dir,
+            })
+    
+    if not skills:
+        print("No skills found in database.")
+        return
+    
+    print(f"\n{'=' * 80}")
+    print(f"Skill Database: {database_path}")
+    print(f"Total Skills: {len(skills)}")
+    print(f"{'=' * 80}\n")
+    
+    for i, skill in enumerate(skills, 1):
+        print(f"{i}. {skill['name']}")
+        print(f"   Description: {skill['metadata'].get('description', 'N/A')}")
+        print(f"   Source: {skill['metadata'].get('source', 'N/A')}")
+        print(f"   Documents: {len(skill['metadata'].get('documents', []))} file(s)")
+        print(f"   Directory: {skill['file_dir']}")
+        print()
+
+
 def find_skill_files(base_dir: Path) -> list[Path]:
     """Find all SKILL.md files in the given directory.
     
@@ -172,11 +240,28 @@ def create_skill_database(
 
 
 if __name__ == "__main__":
-    output_file = Path(__file__).parent / "skill_database.tq"
-    
-    # Allow custom output path via command line
+    # Check for command-line arguments
     if len(sys.argv) > 1:
-        output_file = Path(sys.argv[1])
-    
-    create_skill_database(output_file)
-    print(f"\nSkill database created successfully at: {output_file}")
+        if sys.argv[1] == "--view" or sys.argv[1] == "-v":
+            # View database mode
+            if len(sys.argv) > 2:
+                db_path = Path(sys.argv[2])
+            else:
+                db_path = Path(__file__).parent / "skill_database.tq"
+            view_database(db_path)
+        elif sys.argv[1] == "--help" or sys.argv[1] == "-h":
+            print("Usage:")
+            print("  python build_skill_database.py              - Build the skill database")
+            print("  python build_skill_database.py --view       - View the skill database")
+            print("  python build_skill_database.py --view <path>- View a specific database file")
+            print("  python build_skill_database.py <output_path>- Build database to custom path")
+        else:
+            # Custom output path for building
+            output_file = Path(sys.argv[1])
+            create_skill_database(output_file)
+            print(f"\nSkill database created successfully at: {output_file}")
+    else:
+        # Default: build the database
+        output_file = Path(__file__).parent / "skill_database.tq"
+        create_skill_database(output_file)
+        print(f"\nSkill database created successfully at: {output_file}")

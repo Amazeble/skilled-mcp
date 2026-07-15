@@ -133,6 +133,24 @@ By default, loads from:
 - [K-Dense AI Scientific Skills](https://github.com/K-Dense-AI/claude-scientific-skills) - 78+ specialized skills for bioinformatics, cheminformatics, and scientific analysis
 - Local directory `~/.claude/skills` (if it exists)
 
+### Building a Custom Skill Database
+
+To create your own skill database from local `SKILL.md` files:
+
+```bash
+# Build database from ./agent directory
+python build_skill_database.py ./skill_database.tq
+```
+
+This script:
+1. Searches for all `SKILL.md` files in the `./agent` directory
+2. Extracts skill name and description from each file
+3. Generates vector embeddings using `all-MiniLM-L6-v2` model
+4. Creates a TurboVec index with columns: `name`, `metadata`, `file_dir`
+5. Saves to `skill_database.tq` for use with the MCP server
+
+The resulting database enables semantic search across your custom skills with automatic document path resolution.
+
 ## Contributing
 
 Contributions are welcome! To contribute:

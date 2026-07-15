@@ -10,6 +10,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from typing import List
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -96,7 +97,7 @@ def view_database(database_path: Path) -> None:
         print()
 
 
-def find_skill_files(base_dir: Path) -> list[Path]:
+def find_skill_files(base_dir: Path) -> List[Path]:
     """Find all SKILL.md files in the given directory.
     
     Parameters
@@ -106,7 +107,7 @@ def find_skill_files(base_dir: Path) -> list[Path]:
     
     Returns
     -------
-    list[Path]
+    List[Path]
         List of paths to SKILL.md files.
     """
     # Look for agent directory first

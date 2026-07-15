@@ -11,7 +11,7 @@ DEFAULT_CONFIG = {
     "skill_sources": [
         {
             "type": "local_db",
-            "path": "storage.db",
+            "path": "./skill_database.tq",
         },
     ],
     "embedding_model": "all-MiniLM-L6-v2",

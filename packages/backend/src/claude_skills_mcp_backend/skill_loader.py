@@ -33,6 +33,8 @@ class Skill:
     documents : dict[str, dict[str, Any]]
         Additional documents from the skill directory.
         Keys are relative paths, values contain metadata and content.
+    base_dir : str
+        Base directory path for the skill (for reading documents).
     _document_fetcher : Callable | None
         Function to fetch document content on-demand.
     _document_cache : dict[str, dict[str, Any]]
@@ -47,12 +49,14 @@ class Skill:
         source: str,
         documents: dict[str, dict[str, Any]] | None = None,
         document_fetcher: Callable | None = None,
+        base_dir: str = "",
     ):
         self.name = name
         self.description = description
         self.content = content
         self.source = source
         self.documents = documents or {}
+        self.base_dir = base_dir
         self._document_fetcher = document_fetcher
         self._document_cache = {}
 
@@ -82,13 +86,73 @@ class Skill:
         if doc_info.get("fetched") or "content" in doc_info:
             return doc_info
 
-        # Fetch using the document_fetcher (lazy loading)
+        # Fetch using the document_fetcher (lazy loading) for remote skills
         if self._document_fetcher:
             content = self._document_fetcher(doc_path)
             if content:
                 # Cache it in memory
                 self._document_cache[doc_path] = content
                 return content
+        
+        # For local skills, read directly from base_dir
+        if self.base_dir:
+            try:
+                from pathlib import Path
+                
+                # Construct full path
+                full_path = Path(self.base_dir) / doc_path
+                
+                if not full_path.exists():
+                    logger.warning(f"Document not found: {full_path}")
+                    return None
+                
+                file_ext = Path(doc_path).suffix.lower()
+                
+                # Check if it's a text file
+                text_extensions = [".md", ".py", ".txt", ".json", ".yaml", ".yml", ".sh", ".r", ".ipynb"]
+                image_extensions = [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"]
+                
+                if file_ext in text_extensions:
+                    content = full_path.read_text(encoding="utf-8")
+                    result = {
+                        "type": "text",
+                        "content": content,
+                        "size": full_path.stat().st_size,
+                        "fetched": True,
+                    }
+                elif file_ext in image_extensions:
+                    import base64
+                    file_size = full_path.stat().st_size
+                    max_image_size = 5242880  # 5MB default
+                    
+                    if file_size > max_image_size:
+                        result = {
+                            "type": "image",
+                            "size": file_size,
+                            "size_exceeded": True,
+                            "url": f"file://{full_path}",
+                        }
+                    else:
+                        with open(full_path, "rb") as f:
+                            image_data = f.read()
+                        base64_content = base64.b64encode(image_data).decode("utf-8")
+                        result = {
+                            "type": "image",
+                            "content": base64_content,
+                            "size": file_size,
+                            "url": f"file://{full_path}",
+                        }
+                else:
+                    logger.warning(f"Unsupported file type: {file_ext}")
+                    return None
+                
+                # Cache it in memory
+                self._document_cache[doc_path] = result
+                return result
+                
+            except Exception as e:
+                logger.error(f"Error reading local document {doc_path}: {e}")
+                return None
 
         return None
 
@@ -106,6 +170,7 @@ class Skill:
             "content": self.content,
             "source": self.source,
             "documents": self.documents,
+            "base_dir": self.base_dir,
         }
 
 
@@ -152,11 +217,19 @@ def parse_skill_md(content: str, source: str) -> Skill | None:
         name = name.strip("\"'")
         description = description.strip("\"'")
 
+        # Extract base directory from source (for local paths)
+        base_dir = ""
+        if source and not source.startswith("http"):
+            # Local path - extract directory
+            from pathlib import Path
+            base_dir = str(Path(source).parent)
+
         return Skill(
             name=name,
             description=description,
             content=markdown_body.strip(),  # Store only the markdown body, not the frontmatter
             source=source,
+            base_dir=base_dir,
         )
 
     except Exception as e:
